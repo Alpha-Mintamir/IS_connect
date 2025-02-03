@@ -1,0 +1,26 @@
+services:
+  - type: worker
+    name: linkedin-profile-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    plan: starter
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.8.0
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: LINKEDIN_USERNAME
+        sync: false
+      - key: LINKEDIN_PASSWORD
+        sync: false
