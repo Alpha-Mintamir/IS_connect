@@ -123,8 +123,8 @@ MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 👥 Support
 
-For support, email your-email@domain.com or open an issue in the repository.
+For support, email Alphalencho4@gmail.com or open an issue in the repository.
 
 ---
 
-Built with Python and ❤️ for the Information Science Community
+Built with Python and ❤️ for the Information Systems Community
