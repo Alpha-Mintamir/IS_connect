@@ -177,18 +177,9 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     user_message = update.message.text
     logger.info(f"Received message from user {user_id}: {user_message}")
     
-    # List of all valid button commands
-    valid_commands = [
-        "📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", 
-        "👥 View Users", "➕ Add Profile", "🏠 Back to Main Menu",
-        "✅ Yes, Delete My Profile", "❌ No, Keep My Profile"
-    ]
-    
-    # Handle button commands first
-    if user_message in valid_commands:
-        if user_message == "🏠 Back to Main Menu":
-            await back_to_main_menu(update, context)
-        elif user_message == "📚 Help":
+    # Handle button presses first
+    if user_message in ["📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", "👥 View Users", "➕ Add Profile"]:
+        if user_message == "📚 Help":
             await help_command(update, context)
         elif user_message == "ℹ️ Status":
             await status(update, context)
@@ -243,13 +234,13 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         context.user_data.pop('awaiting_delete_confirmation', None)
         return
 
-    # Only check for LinkedIn URL if it's not a button command
+    # Handle LinkedIn URL processing
     if is_valid_linkedin_url(user_message):
         await process_linkedin_url(update, context, user_message)
     else:
-        # Don't show error for button commands
-        if user_message not in valid_commands:
-            logger.warning(f"Invalid message received from user {user_id}: {user_message}")
+        logger.warning(f"Invalid message received from user {user_id}: {user_message}")
+        # Don't show the error message for button presses
+        if not user_message.startswith(('📚', 'ℹ️', '❌', '🔄', '✅')):
             await update.message.reply_text(
                 "Please send a valid LinkedIn profile URL or use the buttons below.\n"
                 "Example URL: https://www.linkedin.com/in/username"
@@ -892,7 +883,7 @@ async def show_user_list(update: Update, context: CallbackContext, page: int = 0
                 )
             return
         
-        # Create user list message
+        # Create user list message without API calls
         message = "👥 *Registered Users*\n\n"
         for user in users:
             message += (
@@ -915,13 +906,22 @@ async def show_user_list(update: Update, context: CallbackContext, page: int = 0
         if (page + 1) * USERS_PER_PAGE < total_count:
             keyboard.append(InlineKeyboardButton("Next ➡️", callback_data=f"users_page_{page+1}"))
         
-        reply_markup = InlineKeyboardMarkup([keyboard]) if keyboard else None
+        # Add back to main menu button
+        regular_keyboard = [[KeyboardButton("🏠 Back to Main Menu")]]
+        regular_markup = ReplyKeyboardMarkup(regular_keyboard, resize_keyboard=True)
         
+        # Send message with both keyboards
         await update.message.reply_text(
             message,
             parse_mode='Markdown',
             disable_web_page_preview=True,
-            reply_markup=reply_markup
+            reply_markup=InlineKeyboardMarkup([keyboard]) if keyboard else None
+        )
+        
+        # Send the regular keyboard in a separate message
+        await update.message.reply_text(
+            "Use the buttons to navigate:",
+            reply_markup=regular_markup
         )
         
     except Exception as e:
