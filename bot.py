@@ -132,9 +132,9 @@ except Exception as e:
 async def get_main_keyboard():
     """Get the main keyboard markup"""
     keyboard = [
+        [KeyboardButton("➕ Add Profile"), KeyboardButton("👥 View Users")],
         [KeyboardButton("📚 Help"), KeyboardButton("ℹ️ Status")],
-        [KeyboardButton("❌ Delete Profile"), KeyboardButton("🔄 Update Profile")],
-        [KeyboardButton("👥 View Users")]  # Add new button
+        [KeyboardButton("❌ Delete Profile"), KeyboardButton("🔄 Update Profile")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -174,7 +174,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     logger.info(f"Received message from user {user_id}: {user_message}")
     
     # Handle button presses first
-    if user_message in ["📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", "👥 View Users"]:
+    if user_message in ["📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", "👥 View Users", "➕ Add Profile"]:
         if user_message == "📚 Help":
             await help_command(update, context)
         elif user_message == "ℹ️ Status":
@@ -185,6 +185,8 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
             await update_profile(update, context)
         elif user_message == "👥 View Users":
             await show_user_list(update, context)
+        elif user_message == "➕ Add Profile":
+            await add_profile(update, context)
         return
     
     # Handle delete confirmation
@@ -934,6 +936,42 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
         await query.message.reply_text(
             "Sorry, there was an error processing your request.",
             reply_markup=await get_main_keyboard()
+        )
+
+async def add_profile(update: Update, context: CallbackContext) -> None:
+    """Handle Add Profile button press"""
+    user_id = update.message.from_user.id
+    logger.info(f"Add profile requested by user {user_id}")
+    
+    try:
+        # Check if user already has a profile
+        with engine.connect() as conn:
+            existing_profile = conn.execute(
+                select(linkedin_table).where(linkedin_table.c.telegram_user_id == user_id)
+            ).first()
+            
+            if existing_profile:
+                await update.message.reply_text(
+                    "❌ You already have a registered profile!\n\n"
+                    "Use '🔄 Update Profile' to modify your existing profile or\n"
+                    "'❌ Delete Profile' to remove it first."
+                )
+                return
+        
+        # Send instruction message
+        await update.message.reply_text(
+            "🔗 *Add Your LinkedIn Profile*\n\n"
+            "Please send your LinkedIn profile URL in this format:\n"
+            "`https://www.linkedin.com/in/username`\n\n"
+            "Make sure your profile is public for best results!",
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in add_profile for user {user_id}: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Sorry, there was an error processing your request.\n"
+            "Please try again later."
         )
 
 def main():

@@ -27,6 +27,7 @@ importlib_metadata==8.5.0
 itsdangerous==2.2.0
 Jinja2==3.1.5
 linkedin_api==2.2.0
+logging==0.4.9.6
 lxml==5.3.0
 MarkupSafe==2.1.5
 multidict==6.1.0
