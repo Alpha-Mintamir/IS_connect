@@ -110,6 +110,7 @@ try:
                 api = None
                 
         except Exception as api_error:
+            logger.error(f"LinkedIn API initialization failed: {str(api_error)}", exc_info=True)
             if "CHALLENGE" in str(api_error):
                 logger.warning("""
                 LinkedIn requires additional verification. To fix this:
@@ -121,7 +122,7 @@ try:
                 Bot will continue without LinkedIn API features.
                 """)
             else:
-                logger.error(f"LinkedIn API initialization failed: {str(api_error)}", exc_info=True)
+                logger.error(f"Unexpected error during LinkedIn API initialization: {str(api_error)}", exc_info=True)
             api = None
 
 except Exception as e:
