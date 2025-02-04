@@ -37,8 +37,6 @@ DB_PORT = os.getenv('DB_PORT')
 DB_NAME = os.getenv('DB_NAME')
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
-PROXYCURL_API_KEY = os.getenv('PROXYCURL_API_KEY')
-PDL_API_KEY = os.getenv('PDL_API_KEY')
 
 # Validate environment variables
 if not all([TELEGRAM_BOT_TOKEN, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD]):
@@ -89,40 +87,38 @@ try:
     LINKEDIN_PASSWORD = os.getenv('LINKEDIN_PASSWORD')
     
     if not all([LINKEDIN_USERNAME, LINKEDIN_PASSWORD]):
-        logger.error("LinkedIn credentials not found in environment variables")
+        logger.warning("LinkedIn credentials not found - bot will run without LinkedIn API features")
         api = None
     else:
         try:
-            # Initialize API with retry mechanism
-            for attempt in range(3):  # Try 3 times
-                try:
-                    api = Linkedin(
-                        LINKEDIN_USERNAME,
-                        LINKEDIN_PASSWORD
-                    )
-                    # Test the connection
-                    logger.info("Testing LinkedIn connection...")
-                    me = api.get_profile()
-                    if me:
-                        logger.info("LinkedIn API initialized successfully")
-                        break
-                    else:
-                        raise Exception("Could not verify LinkedIn connection")
-                except Exception as retry_error:
-                    logger.warning(f"LinkedIn API attempt {attempt + 1} failed: {str(retry_error)}")
-                    if attempt == 2:  # Last attempt
-                        raise
-                    time.sleep(5)  # Wait 5 seconds before retrying
-                    
+            # Initialize API with basic authentication (removed unsupported parameters)
+            api = Linkedin(
+                LINKEDIN_USERNAME,
+                LINKEDIN_PASSWORD
+            )
+            # Test the connection with a simple operation
+            logger.info("Testing LinkedIn connection...")
+            try:
+                # Use a simpler test that's less likely to trigger security
+                me = api.get_profile()
+                if me:
+                    logger.info("LinkedIn API initialized successfully")
+                else:
+                    raise Exception("Could not verify LinkedIn connection")
+            except Exception as test_error:
+                logger.error(f"LinkedIn API test failed: {str(test_error)}")
+                api = None
+                
         except Exception as api_error:
             if "CHALLENGE" in str(api_error):
-                logger.error("""
-                LinkedIn security challenge detected. To fix:
-                1. Log in to LinkedIn in a browser
-                2. Complete any security verifications
-                3. Disable 2FA temporarily
-                4. Wait 15-30 minutes
-                5. Try again or use a different LinkedIn account
+                logger.warning("""
+                LinkedIn requires additional verification. To fix this:
+                1. Log in to LinkedIn in your browser with the same account
+                2. Complete any security verification steps
+                3. Make sure 2FA is disabled for this account
+                4. Wait 15-30 minutes before trying again
+                5. Consider using a different LinkedIn account
+                Bot will continue without LinkedIn API features.
                 """)
             else:
                 logger.error(f"LinkedIn API initialization failed: {str(api_error)}", exc_info=True)
@@ -231,6 +227,43 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     else:
         logger.warning(f"Invalid message received from user {user_id}: {user_message}")
         await update.message.reply_text("Please send a valid LinkedIn profile URL or use the buttons below.\nExample URL: https://www.linkedin.com/in/username")
+            
+async def add_profile(update: Update, context: CallbackContext) -> None:
+    """Handle Add Profile button press"""
+    user_id = update.message.from_user.id
+    logger.info(f"Add profile requested by user {user_id}")
+    
+    try:
+        # Check if user already has a profile
+        with engine.connect() as conn:
+            existing_profile = conn.execute(
+                select(linkedin_table).where(linkedin_table.c.telegram_user_id == user_id)
+            ).first()
+            
+            if existing_profile:
+                await update.message.reply_text(
+                    "❌ You already have a registered profile!\n\n"
+                    "Use '🔄 Update Profile' to modify your existing profile or\n"
+                    "'❌ Delete Profile' to remove it first."
+                )
+                return
+        
+        # Send instruction message
+        await update.message.reply_text(
+            "🔗 *Add Your LinkedIn Profile*\n\n"
+            "Please send your LinkedIn profile URL in this format:\n"
+            "`https://www.linkedin.com/in/username`\n\n"
+            "Make sure your profile is public for best results!",
+            parse_mode='Markdown'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in add_profile for user {user_id}: {str(e)}", exc_info=True)
+        await update.message.reply_text(
+            "❌ Sorry, there was an error processing your request.\n"
+            "Please try again later."
+        )
+
 
 async def process_linkedin_url(update: Update, context: CallbackContext, url: str) -> None:
     """Process LinkedIn URL submission"""
@@ -518,35 +551,27 @@ async def admin_stats(update: Update, context: CallbackContext) -> None:
         await update.message.reply_text(f"Total registered users: {total_users}")
 
 async def help_command(update: Update, context: CallbackContext) -> None:
-    """Show help information"""
-    try:
-        help_text = (
-            "📚 *Available Commands*\n\n"
-            "➕ *Add Profile*: Share your LinkedIn profile\n"
-            "👥 *View Users*: Browse community members\n"
-            "🔄 *Update Profile*: Modify your information\n"
-            "❌ *Delete Profile*: Remove your profile\n"
-            "ℹ️ *Status*: Check bot status\n\n"
-            "Need more help? Contact @alphityy"
-        )
-        
-        keyboard = [
-            [KeyboardButton("🏠 Back to Main Menu")]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        
-        await update.message.reply_text(
-            help_text,
-            parse_mode='Markdown',
-            reply_markup=reply_markup
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in help command: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            "Sorry, there was an error showing the help information.",
-            reply_markup=await get_main_keyboard()
-        )
+    user_id = update.message.from_user.id
+    logger.info(f"Help command requested by user {user_id}")
+    help_text = (
+        "📚 *Available Commands:*\n\n"
+        "🎯 *Basic Commands*\n"
+        "• /start - Start the bot and see welcome message\n"
+        "• /help - Show this help message\n"
+        "• /status - Check bot's current status\n\n"
+        "👤 *Profile Management*\n"
+        "• /delete - Remove your LinkedIn profile\n"
+        "• /update - Update your existing profile\n\n"
+        "💡 *How to Share Your Profile:*\n"
+        "Simply send your LinkedIn URL in this format:\n"
+        "`https://www.linkedin.com/in/username`\n\n"
+        "🔔 *Features:*\n"
+        "• Automatic profile information extraction\n"
+        "• Real-time notifications for new connections\n"
+        "• View other professionals' profiles\n\n"
+        "Need more help? Contact @alphityy"
+    )
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def retry_linkedin_api(func: callable, *args, max_retries: int = 3, **kwargs) -> Optional[Any]:
     """Retry a LinkedIn API call with exponential backoff"""
@@ -564,39 +589,50 @@ async def retry_linkedin_api(func: callable, *args, max_retries: int = 3, **kwar
             await asyncio.sleep(wait_time)
 
 async def fetch_linkedin_profile(linkedin_url: str) -> Optional[Dict]:
-    """Fetch profile information using People Data Labs API"""
+    """Fetch profile information and photo from LinkedIn URL"""
     try:
-        api_endpoint = 'https://api.peopledatalabs.com/v5/person/enrich'
-        headers = {
-            'X-Api-Key': PDL_API_KEY,
-            'Content-Type': 'application/json'
-        }
+        if api is None:
+            logger.error("LinkedIn API not initialized when trying to fetch profile")
+            return None
+            
+        profile_id = linkedin_url.split('/in/')[-1].strip('/')
+        logger.info(f"Attempting to fetch profile for ID: {profile_id}")
         
-        params = {
-            'profile': linkedin_url,
-            'min_likelihood': 6
-        }
-        
-        logger.info(f"Fetching profile data for URL: {linkedin_url}")
-        response = requests.get(api_endpoint, params=params, headers=headers)
-        
-        if response.status_code == 200:
-            profile_data = response.json()
+        try:
+            # Fetch profile data with retries
+            profile_data = await retry_linkedin_api(api.get_profile, profile_id)
+            
+            if not profile_data:
+                logger.error("No profile data returned from LinkedIn API")
+                return None
+                
+            logger.info("Successfully fetched profile data")
             
             # Process the profile data
             profile_info = {
-                'full_name': profile_data.get('full_name', ''),
-                'headline': profile_data.get('job_title', ''),
-                'location': f"{profile_data.get('location_name', '')}, {profile_data.get('location_country', '')}",
-                'current_company': profile_data.get('job_company_name', ''),
-                'summary': profile_data.get('bio', '')
+                'full_name': f"{profile_data.get('firstName', '')} {profile_data.get('lastName', '')}",
+                'headline': profile_data.get('headline', ''),
+                'location': profile_data.get('geoLocationName', ''),
+                'current_company': profile_data.get('experience', [{}])[0].get('companyName', '') if profile_data.get('experience') else '',
+                'summary': profile_data.get('summary', '')
             }
             
-            logger.info("Successfully fetched profile data")
+            # Handle profile picture separately to avoid timeouts
+            try:
+                if profile_data.get('profilePicture', {}).get('displayImage'):
+                    pic_url = profile_data['profilePicture']['displayImage']
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(pic_url) as response:
+                            if response.status == 200:
+                                profile_info['profile_picture'] = BytesIO(await response.read())
+                                profile_info['profile_picture'].name = 'profile_picture.jpg'
+            except Exception as pic_error:
+                logger.warning(f"Could not fetch profile picture: {str(pic_error)}")
+            
             return profile_info
             
-        else:
-            logger.error(f"API request failed with status code: {response.status_code}")
+        except Exception as api_error:
+            logger.error(f"Error fetching profile from LinkedIn API: {str(api_error)}", exc_info=True)
             return None
             
     except Exception as e:
@@ -873,10 +909,10 @@ async def show_user_list(update: Update, context: CallbackContext, page: int = 0
         message = "👥 *Registered Users*\n\n"
         for user in users:
             message += (
-                f"👤 *{user.full_name if user.full_name else 'Name not available'}*\n"
-                f"{'✨ ' + user.headline if user.headline else ''}\n"
-                f"{'🏢 ' + user.current_company if user.current_company else ''}\n"
-                f"{'📍 ' + user.location if user.location else ''}\n"
+                f"👤 *{user.full_name or 'Name not available'}*\n"
+                f"{'✨ ' + user.headline + chr(10) if user.headline else ''}"
+                f"{'🏢 ' + user.current_company + chr(10) if user.current_company else ''}"
+                f"{'📍 ' + user.location + chr(10) if user.location else ''}"
                 f"🔗 [View Profile]({user.linkedin_url})\n"
                 f"{'━' * 20}\n\n"
             )
@@ -892,22 +928,13 @@ async def show_user_list(update: Update, context: CallbackContext, page: int = 0
         if (page + 1) * USERS_PER_PAGE < total_count:
             keyboard.append(InlineKeyboardButton("Next ➡️", callback_data=f"users_page_{page+1}"))
         
-        # Add back to main menu button
-        regular_keyboard = [[KeyboardButton("🏠 Back to Main Menu")]]
-        regular_markup = ReplyKeyboardMarkup(regular_keyboard, resize_keyboard=True)
+        reply_markup = InlineKeyboardMarkup([keyboard]) if keyboard else None
         
-        # Send message with both keyboards
         await update.message.reply_text(
             message,
             parse_mode='Markdown',
             disable_web_page_preview=True,
-            reply_markup=InlineKeyboardMarkup([keyboard]) if keyboard else None
-        )
-        
-        # Send the regular keyboard in a separate message
-        await update.message.reply_text(
-            "Use the buttons to navigate:",
-            reply_markup=regular_markup
+            reply_markup=reply_markup
         )
         
     except Exception as e:
@@ -934,41 +961,6 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
             reply_markup=await get_main_keyboard()
         )
 
-async def add_profile(update: Update, context: CallbackContext) -> None:
-    """Handle Add Profile button press"""
-    user_id = update.message.from_user.id
-    logger.info(f"Add profile requested by user {user_id}")
-    
-    try:
-        # Check if user already has a profile
-        with engine.connect() as conn:
-            existing_profile = conn.execute(
-                select(linkedin_table).where(linkedin_table.c.telegram_user_id == user_id)
-            ).first()
-            
-            if existing_profile:
-                await update.message.reply_text(
-                    "❌ You already have a registered profile!\n\n"
-                    "Use '🔄 Update Profile' to modify your existing profile or\n"
-                    "'❌ Delete Profile' to remove it first."
-                )
-                return
-        
-        # Send instruction message
-        await update.message.reply_text(
-            "🔗 *Add Your LinkedIn Profile*\n\n"
-            "Please send your LinkedIn profile URL in this format:\n"
-            "`https://www.linkedin.com/in/username`\n\n"
-            "Make sure your profile is public for best results!",
-            parse_mode='Markdown'
-        )
-        
-    except Exception as e:
-        logger.error(f"Error in add_profile for user {user_id}: {str(e)}", exc_info=True)
-        await update.message.reply_text(
-            "❌ Sorry, there was an error processing your request.\n"
-            "Please try again later."
-        )
 
 async def back_to_main_menu(update: Update, context: CallbackContext) -> None:
     """Return to main menu"""
@@ -1015,7 +1007,6 @@ def main():
             application.add_handler(CommandHandler("delete", delete_profile))
             application.add_handler(CommandHandler("update", update_profile))
             application.add_handler(CommandHandler("help", help_command))
-            application.add_handler(CommandHandler("test_linkedin", test_linkedin))
             application.add_handler(CommandHandler("status", status))
             application.add_handler(CommandHandler("search", search_profiles))
             application.add_handler(CommandHandler("stats", profile_stats))
@@ -1080,8 +1071,6 @@ env_vars = {
     'DB_USER': bool(DB_USER),
     'DB_PASSWORD': bool(DB_PASSWORD),
     'LINKEDIN_USERNAME': bool(os.getenv('LINKEDIN_USERNAME')),
-    'LINKEDIN_PASSWORD': bool(os.getenv('LINKEDIN_PASSWORD')),
-    'PROXYCURL_API_KEY': bool(PROXYCURL_API_KEY),
-    'PDL_API_KEY': bool(PDL_API_KEY)
+    'LINKEDIN_PASSWORD': bool(os.getenv('LINKEDIN_PASSWORD'))
 }
 logger.info(f"Environment variables loaded: {env_vars}")
