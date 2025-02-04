@@ -872,37 +872,29 @@ def reset_event_loop():
         except Exception as e:
             logger.error(f"Error resetting event loop: {str(e)}")
 
-async def show_user_list(update: Update, context: CallbackContext, page: int = 0) -> None:
-    """Show paginated list of registered users"""
+async def show_user_list(update: Update, context: CallbackContext) -> None:
+    """Show all registered users without pagination"""
     try:
-        USERS_PER_PAGE = 4
-        user_id = update.message.from_user.id
-        
+        # Determine if the request comes from a command or a callback query
+        if update.message:
+            message_sender = update.message
+        elif update.callback_query:
+            message_sender = update.callback_query.message
+            await update.callback_query.answer()  # Acknowledge the callback query
+        else:
+            return  # No valid update, exit the function
+
         with engine.connect() as conn:
-            # Get total count
-            total_count = conn.execute(
-                select(func.count()).select_from(linkedin_table)
-            ).scalar()
-            
-            # Get paginated users
-            query = select(linkedin_table).order_by(
-                linkedin_table.c.created_at.desc()
-            ).offset(page * USERS_PER_PAGE).limit(USERS_PER_PAGE)
-            
+            # Get all registered users
+            query = select(linkedin_table).order_by(linkedin_table.c.created_at.desc())
             users = conn.execute(query).fetchall()
             
         if not users:
-            if page == 0:
-                await update.message.reply_text(
-                    "No users registered yet! 😊\n"
-                    "Be the first one to share your LinkedIn profile!",
-                    reply_markup=await get_main_keyboard()
-                )
-            else:
-                await update.message.reply_text(
-                    "No more users to show.",
-                    reply_markup=await get_main_keyboard()
-                )
+            await message_sender.reply_text(
+                "No users registered yet! 😊\n"
+                "Be the first one to share your LinkedIn profile!",
+                reply_markup=await get_main_keyboard()
+            )
             return
         
         # Create user list message
@@ -917,32 +909,20 @@ async def show_user_list(update: Update, context: CallbackContext, page: int = 0
                 f"{'━' * 20}\n\n"
             )
         
-        # Add pagination info
-        total_pages = (total_count + USERS_PER_PAGE - 1) // USERS_PER_PAGE
-        message += f"\nPage {page + 1} of {total_pages}"
-        
-        # Create inline keyboard for pagination
-        keyboard = []
-        if page > 0:
-            keyboard.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"users_page_{page-1}"))
-        if (page + 1) * USERS_PER_PAGE < total_count:
-            keyboard.append(InlineKeyboardButton("Next ➡️", callback_data=f"users_page_{page+1}"))
-        
-        reply_markup = InlineKeyboardMarkup([keyboard]) if keyboard else None
-        
-        await update.message.reply_text(
+        # Send user list message
+        await message_sender.reply_text(
             message,
             parse_mode='Markdown',
-            disable_web_page_preview=True,
-            reply_markup=reply_markup
+            disable_web_page_preview=True
         )
         
     except Exception as e:
         logger.error(f"Error showing user list: {str(e)}", exc_info=True)
-        await update.message.reply_text(
+        await message_sender.reply_text(
             "Sorry, there was an error fetching the user list.",
             reply_markup=await get_main_keyboard()
         )
+
 
 async def button_callback(update: Update, context: CallbackContext) -> None:
     """Handle button callbacks"""
