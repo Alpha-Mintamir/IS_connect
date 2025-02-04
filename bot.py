@@ -177,9 +177,19 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     user_message = update.message.text
     logger.info(f"Received message from user {user_id}: {user_message}")
     
-    # Handle button presses first
-    if user_message in ["📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", "👥 View Users", "➕ Add Profile"]:
-        if user_message == "📚 Help":
+    # List of all valid button commands
+    valid_commands = [
+        "📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", 
+        "👥 View Users", "➕ Add Profile", "🏠 Back to Main Menu",
+        "✅ Yes, Delete My Profile", "❌ No, Keep My Profile"
+    ]
+    
+    # Handle button commands first
+    if user_message in valid_commands:
+        if user_message == "🏠 Back to Main Menu":
+            await back_to_main_menu(update, context)
+            return
+        elif user_message == "📚 Help":
             await help_command(update, context)
         elif user_message == "ℹ️ Status":
             await status(update, context)
@@ -203,16 +213,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
                     )
                     if result.rowcount > 0:
                         logger.info(f"Successfully deleted profile for user {user_id}")
-                        # Reset to default keyboard
-                        keyboard = [
-                            [KeyboardButton("📚 Help"), KeyboardButton("ℹ️ Status")],
-                            [KeyboardButton("❌ Delete Profile"), KeyboardButton("🔄 Update Profile")]
-                        ]
-                        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-                        await update.message.reply_text(
-                            "Your profile has been deleted.",
-                            reply_markup=reply_markup
-                        )
+                        await update.message.reply_text("Your profile has been deleted.", reply_markup=await get_main_keyboard())
                     else:
                         logger.warning(f"No profile found to delete for user {user_id}")
                         await update.message.reply_text("No profile found to delete.")
@@ -220,17 +221,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
                 logger.error(f"Error deleting profile for user {user_id}: {str(e)}", exc_info=True)
                 await update.message.reply_text("Sorry, there was an error deleting your profile.")
         elif user_message.lower() in ["no", "❌ no, keep my profile"]:
-            # Reset to default keyboard
-            keyboard = [
-                [KeyboardButton("📚 Help"), KeyboardButton("ℹ️ Status")],
-                [KeyboardButton("❌ Delete Profile"), KeyboardButton("🔄 Update Profile")]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            await update.message.reply_text(
-                "Profile deletion cancelled.",
-                reply_markup=reply_markup
-            )
-        # Clear the awaiting confirmation state
+            await update.message.reply_text("Profile deletion cancelled.", reply_markup=await get_main_keyboard())
         context.user_data.pop('awaiting_delete_confirmation', None)
         return
 
@@ -239,12 +230,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         await process_linkedin_url(update, context, user_message)
     else:
         logger.warning(f"Invalid message received from user {user_id}: {user_message}")
-        # Don't show the error message for button presses
-        if not user_message.startswith(('📚', 'ℹ️', '❌', '🔄', '✅')):
-            await update.message.reply_text(
-                "Please send a valid LinkedIn profile URL or use the buttons below.\n"
-                "Example URL: https://www.linkedin.com/in/username"
-            )
+        await update.message.reply_text("Please send a valid LinkedIn profile URL or use the buttons below.\nExample URL: https://www.linkedin.com/in/username")
 
 async def process_linkedin_url(update: Update, context: CallbackContext, url: str) -> None:
     """Process LinkedIn URL submission"""
@@ -883,14 +869,14 @@ async def show_user_list(update: Update, context: CallbackContext, page: int = 0
                 )
             return
         
-        # Create user list message without API calls
+        # Create user list message
         message = "👥 *Registered Users*\n\n"
         for user in users:
             message += (
-                f"👤 *{user.full_name or 'Name not available'}*\n"
-                f"{'✨ ' + user.headline + chr(10) if user.headline else ''}"
-                f"{'🏢 ' + user.current_company + chr(10) if user.current_company else ''}"
-                f"{'📍 ' + user.location + chr(10) if user.location else ''}"
+                f"👤 *{user.full_name if user.full_name else 'Name not available'}*\n"
+                f"{'✨ ' + user.headline if user.headline else ''}\n"
+                f"{'🏢 ' + user.current_company if user.current_company else ''}\n"
+                f"{'📍 ' + user.location if user.location else ''}\n"
                 f"🔗 [View Profile]({user.linkedin_url})\n"
                 f"{'━' * 20}\n\n"
             )
