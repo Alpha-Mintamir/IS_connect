@@ -41,7 +41,7 @@ PROXYCURL_API_KEY = os.getenv('PROXYCURL_API_KEY')
 PDL_API_KEY = os.getenv('PDL_API_KEY')
 
 # Validate environment variables
-if not all([TELEGRAM_BOT_TOKEN, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, PROXYCURL_API_KEY, PDL_API_KEY]):
+if not all([TELEGRAM_BOT_TOKEN, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD]):
     raise ValueError("Some environment variables are missing.")
 
 # Database connection string
@@ -138,8 +138,7 @@ async def get_main_keyboard():
     keyboard = [
         [KeyboardButton("➕ Add Profile"), KeyboardButton("👥 View Users")],
         [KeyboardButton("📚 Help"), KeyboardButton("ℹ️ Status")],
-        [KeyboardButton("❌ Delete Profile"), KeyboardButton("🔄 Update Profile")],
-        [KeyboardButton("🏠 Back to Main Menu")]
+        [KeyboardButton("❌ Delete Profile"), KeyboardButton("🔄 Update Profile")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -178,9 +177,18 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     user_message = update.message.text
     logger.info(f"Received message from user {user_id}: {user_message}")
     
-    # Handle button presses first
-    if user_message in ["📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", "👥 View Users", "➕ Add Profile", "🏠 Back to Main Menu"]:
-        if user_message == "📚 Help":
+    # List of all valid button commands
+    valid_commands = [
+        "📚 Help", "ℹ️ Status", "❌ Delete Profile", "🔄 Update Profile", 
+        "👥 View Users", "➕ Add Profile", "🏠 Back to Main Menu",
+        "✅ Yes, Delete My Profile", "❌ No, Keep My Profile"
+    ]
+    
+    # Handle button commands first
+    if user_message in valid_commands:
+        if user_message == "🏠 Back to Main Menu":
+            await back_to_main_menu(update, context)
+        elif user_message == "📚 Help":
             await help_command(update, context)
         elif user_message == "ℹ️ Status":
             await status(update, context)
@@ -192,8 +200,6 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
             await show_user_list(update, context)
         elif user_message == "➕ Add Profile":
             await add_profile(update, context)
-        elif user_message == "🏠 Back to Main Menu":
-            await back_to_main_menu(update, context)
         return
     
     # Handle delete confirmation
@@ -237,13 +243,13 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         context.user_data.pop('awaiting_delete_confirmation', None)
         return
 
-    # Handle LinkedIn URL processing
+    # Only check for LinkedIn URL if it's not a button command
     if is_valid_linkedin_url(user_message):
         await process_linkedin_url(update, context, user_message)
     else:
-        logger.warning(f"Invalid message received from user {user_id}: {user_message}")
-        # Don't show the error message for button presses
-        if not user_message.startswith(('📚', 'ℹ️', '❌', '🔄', '✅')):
+        # Don't show error for button commands
+        if user_message not in valid_commands:
+            logger.warning(f"Invalid message received from user {user_id}: {user_message}")
             await update.message.reply_text(
                 "Please send a valid LinkedIn profile URL or use the buttons below.\n"
                 "Example URL: https://www.linkedin.com/in/username"
@@ -544,7 +550,7 @@ async def help_command(update: Update, context: CallbackContext) -> None:
             "🔄 *Update Profile*: Modify your information\n"
             "❌ *Delete Profile*: Remove your profile\n"
             "ℹ️ *Status*: Check bot status\n\n"
-            "Need more help? Contact @YourUsername"
+            "Need more help? Contact @alphityy"
         )
         
         keyboard = [
@@ -980,11 +986,20 @@ async def add_profile(update: Update, context: CallbackContext) -> None:
 
 async def back_to_main_menu(update: Update, context: CallbackContext) -> None:
     """Return to main menu"""
-    reply_markup = await get_main_keyboard()
-    await update.message.reply_text(
-        "🏠 Back to main menu!",
-        reply_markup=reply_markup
-    )
+    try:
+        # Clear any ongoing operations in context
+        context.user_data.clear()
+        
+        # Get main keyboard
+        reply_markup = await get_main_keyboard()
+        
+        await update.message.reply_text(
+            "🏠 Back to main menu!",
+            reply_markup=reply_markup
+        )
+    except Exception as e:
+        logger.error(f"Error returning to main menu: {str(e)}", exc_info=True)
+        await update.message.reply_text("Sorry, there was an error. Please try /start to reset.")
 
 def main():
     logger.info("Starting bot...")
@@ -1020,6 +1035,7 @@ def main():
             application.add_handler(CommandHandler("stats", profile_stats))
             application.add_handler(CommandHandler("export", export_profiles))
             application.add_handler(CallbackQueryHandler(button_callback))
+            application.add_handler(CommandHandler("menu", back_to_main_menu))
             application.add_error_handler(error_handler)
             
             logger.info("Bot is ready to start polling")
