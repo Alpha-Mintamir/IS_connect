@@ -985,7 +985,6 @@ def main():
     retry_delay = 5  # seconds
     
     # Get the port from the environment variable
-    port = int(os.getenv('PORT', 8443))  # Default to 8443 if PORT is not set
 
     while True:  # Keep the bot running indefinitely
         try:
@@ -1025,7 +1024,6 @@ def main():
                 allowed_updates=Update.ALL_TYPES,
                 drop_pending_updates=True,
                 close_loop=False,
-                port=port  # Bind to the specified port
             )
             
         except telegram.error.NetworkError as e:
