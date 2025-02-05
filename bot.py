@@ -1,5 +1,5 @@
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 import logging
 import os
 from dotenv import load_dotenv
@@ -32,6 +32,7 @@ message_timestamps = defaultdict(list)
 # Load environment variables
 load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 DB_HOST = os.getenv('DB_HOST')
 DB_PORT = os.getenv('DB_PORT')
 DB_NAME = os.getenv('DB_NAME')
@@ -39,7 +40,7 @@ DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 
 # Validate environment variables
-if not all([TELEGRAM_BOT_TOKEN, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD]):
+if not all([TELEGRAM_BOT_TOKEN, WEBHOOK_URL, DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD]):
     raise ValueError("Some environment variables are missing.")
 
 # Database connection string
@@ -960,100 +961,72 @@ async def back_to_main_menu(update: Update, context: CallbackContext) -> None:
         logger.error(f"Error returning to main menu: {str(e)}", exc_info=True)
         await update.message.reply_text("Sorry, there was an error. Please try /start to reset.")
 
-def main():
+async def main():
     logger.info("Starting bot...")
-    max_retries = 3
     retry_delay = 5  # seconds
-    
-    # Get the port from the environment variable
 
     while True:  # Keep the bot running indefinitely
         try:
-            # Reset event loop
-            reset_event_loop()
-            
-            # Create new application instance
+            # Create a new application instance
             application = (
-                Application.builder()
+                ApplicationBuilder()
                 .token(TELEGRAM_BOT_TOKEN)
                 .connect_timeout(CONNECT_TIMEOUT)
                 .read_timeout(READ_TIMEOUT)
-                .get_updates_connect_timeout(CONNECT_TIMEOUT)
-                .get_updates_read_timeout(READ_TIMEOUT)
                 .build()
             )
-            
+
             # Add handlers
             logger.info("Setting up command handlers...")
             application.add_handler(CommandHandler("start", start))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-            application.add_handler(CommandHandler("delete", delete_profile))
-            application.add_handler(CommandHandler("update", update_profile))
-            application.add_handler(CommandHandler("help", help_command))
-            application.add_handler(CommandHandler("status", status))
-            application.add_handler(CommandHandler("search", search_profiles))
-            application.add_handler(CommandHandler("stats", profile_stats))
-            application.add_handler(CommandHandler("export", export_profiles))
-            application.add_handler(CallbackQueryHandler(button_callback))
-            application.add_handler(CommandHandler("menu", back_to_main_menu))
+            application.add_handler(CommandHandler("help", start))  # Using the same handler as a placeholder
             application.add_error_handler(error_handler)
-            
-            logger.info("Bot is ready to start polling")
-            
-            # Run the bot with proper shutdown handling
-            application.run_polling(
-                allowed_updates=Update.ALL_TYPES,
-                drop_pending_updates=True,
-                close_loop=False,
+
+            logger.info("Bot is ready to set webhook")
+
+            # Set the webhook on Telegram's servers
+            await application.bot.set_webhook(WEBHOOK_URL)
+
+            # Start the webhook. This call is non‐blocking, and the bot will continue to run
+            await application.start_webhook(
+                listen="0.0.0.0",
+                port=int(os.getenv("PORT", 8443)),
+                webhook_url=WEBHOOK_URL,
             )
-            
+
+            # Run the bot until you manually interrupt (e.g. with Ctrl+C)
+            await application.idle()
+
         except telegram.error.NetworkError as e:
-            logger.error(f"Network error occurred: {str(e)}")
-            time.sleep(retry_delay)
+            logger.error(f"Network error occurred: {e}")
+            await asyncio.sleep(retry_delay)  # Asynchronously wait before retrying
             continue
-            
+
         except telegram.error.TimedOut:
             logger.warning(f"Connection timed out. Retrying in {retry_delay} seconds...")
-            time.sleep(retry_delay)
+            await asyncio.sleep(retry_delay)
             continue
-            
-        except Exception as e:
-            logger.error("Failed to start bot:", exc_info=True)
-            time.sleep(retry_delay)
+
+        except Exception:
+            logger.exception("Failed to start bot:")
+            await asyncio.sleep(retry_delay)
             continue
-        
-        finally:
-            # Clean up
-            try:
-                loop = asyncio.get_event_loop()
-                if not loop.is_closed():
-                    loop.run_until_complete(application.shutdown())
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Error during cleanup: {str(e)}")
 
-if __name__ == '__main__':
-    try:
-        # Add constants at the top of the file
-        CONNECT_TIMEOUT = 30.0  # seconds
-        READ_TIMEOUT = 30.0    # seconds
-        
-        # Start the bot
-        main()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error("Fatal error occurred:", exc_info=True)
+if __name__ == "__main__":
+    # Check environment variables before starting the bot
+    logger.info("Checking environment variables...")
+    env_vars = {
+        'TELEGRAM_BOT_TOKEN': bool(TELEGRAM_BOT_TOKEN),
+        'DB_HOST': bool(os.getenv('DB_HOST')),
+        'DB_PORT': bool(os.getenv('DB_PORT')),
+        'DB_NAME': bool(os.getenv('DB_NAME')),
+        'DB_USER': bool(os.getenv('DB_USER')),
+        'DB_PASSWORD': bool(os.getenv('DB_PASSWORD')),
+        'LINKEDIN_USERNAME': bool(os.getenv('LINKEDIN_USERNAME')),
+        'LINKEDIN_PASSWORD': bool(os.getenv('LINKEDIN_PASSWORD'))
+    }
+    logger.info(f"Environment variables loaded: {env_vars}")
 
-logger.info("Checking environment variables...")
-env_vars = {
-    'TELEGRAM_BOT_TOKEN': bool(TELEGRAM_BOT_TOKEN),
-    'DB_HOST': bool(DB_HOST),
-    'DB_PORT': bool(DB_PORT),
-    'DB_NAME': bool(DB_NAME),
-    'DB_USER': bool(DB_USER),
-    'DB_PASSWORD': bool(DB_PASSWORD),
-    'LINKEDIN_USERNAME': bool(os.getenv('LINKEDIN_USERNAME')),
-    'LINKEDIN_PASSWORD': bool(os.getenv('LINKEDIN_PASSWORD'))
-}
-logger.info(f"Environment variables loaded: {env_vars}")
+    # Start the async main() function
+    asyncio.run(main())
