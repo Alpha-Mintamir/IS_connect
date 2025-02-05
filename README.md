@@ -2,20 +2,23 @@
 
 A Telegram bot designed to facilitate professional networking within the Information Systems community by enabling students to share and discover LinkedIn profiles. Perfect for IS students, alumni, and faculty members.
 
-![IS_Connect Bot Logo](https://github.com/user-attachments/assets/86853d30-4479-4550-ab69-e3d2e55fc077)
+![Start](https://github.com/Alpha-Mintamir/IS_connect/blob/main/assets/photo_2025-02-05_15-41-22.jpg)
 
 ## ✨ Features
 
 ### Core Features
 
 - **LinkedIn Profile Sharing:**  
-  Users can share their LinkedIn profiles, and the bot automatically extracts key data.  
+  Users can share their LinkedIn profiles, and the bot automatically extracts key data.
+  ![add profile](https://github.com/Alpha-Mintamir/IS_connect/blob/main/assets/photo_2025-02-05_15-41-21.jpg) 
 
 - **Community Browsing:**  
-  View community members' profiles in a paginated format for easy exploration and networking.  
+  View community members' profiles in a paginated format for easy exploration and networking.
+  ![View Users](https://github.com/Alpha-Mintamir/IS_connect/blob/main/assets/photo_2025-02-05_15-41-22%20(2).jpg)
 
 - **Bot Status Monitoring:**  
-  Check the current status of the bot to ensure smooth operation.  
+  Check the current status of the bot to ensure smooth operation.
+  ![Status](https://github.com/Alpha-Mintamir/IS_connect/blob/main/assets/photo_2025-02-05_15-41-23.jpg)
 
 - **Profile Search:**  
   Search through profiles using keywords to find the right connections.
