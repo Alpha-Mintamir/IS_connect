@@ -2,15 +2,27 @@
 
 A Telegram bot designed to facilitate professional networking within the Information Systems community by enabling students to share and discover LinkedIn profiles. Perfect for IS students, alumni, and faculty members.
 
+![IS_Connect Bot Logo](https://github.com/user-attachments/assets/86853d30-4479-4550-ab69-e3d2e55fc077)
+
 ## ✨ Features
 
 ### Core Features
 
-- 🔄 Share LinkedIn profiles with automatic data extraction
-- 👥 View community members' profiles in a paginated format
-- 📊 Get network statistics and insights
-- 🔍 Search profiles by keywords
-- 📱 User-friendly button interface
+- **LinkedIn Profile Sharing:**  
+  Users can share their LinkedIn profiles, and the bot automatically extracts key data.  
+
+- **Community Browsing:**  
+  View community members' profiles in a paginated format for easy exploration and networking.  
+
+- **Bot Status Monitoring:**  
+  Check the current status of the bot to ensure smooth operation.  
+
+- **Profile Search:**  
+  Search through profiles using keywords to find the right connections.
+
+- **User-Friendly Button Interface:**  
+  Navigate the bot using an intuitive button-based interface.
+
 
 ### Advanced Features
 
@@ -19,6 +31,7 @@ A Telegram bot designed to facilitate professional networking within the Informa
 - 🔐 Profile management (update/delete)
 - 🎯 Automatic profile data validation
 - 📢 New member notifications
+
 
 ## 🛠 Technical Stack
 
