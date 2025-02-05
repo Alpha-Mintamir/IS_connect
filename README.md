@@ -1,6 +1,6 @@
 # 🤖 IS_Connect Bot
 
-A Telegram bot designed to facilitate professional networking within the Information Science community by enabling users to share and discover LinkedIn profiles. Perfect for IS students, alumni, and faculty members.
+A Telegram bot designed to facilitate professional networking within the Information Systems community by enabling students to share and discover LinkedIn profiles. Perfect for IS students, alumni, and faculty members.
 
 ## ✨ Features
 
