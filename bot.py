@@ -3,7 +3,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 import logging
 import os
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, insert, select, Table, MetaData, Column, Integer, String, DateTime, Text
+from sqlalchemy import create_engine, insert, select, Table, MetaData, Column, Integer, String, DateTime, Text, text
 from sqlalchemy.exc import IntegrityError
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -80,6 +80,12 @@ linkedin_table = Table(
     Column('created_at', DateTime, default=datetime.utcnow),
     Column('updated_at', DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 )
+
+PROFILE_COLUMNS = {column.name for column in linkedin_table.columns}
+
+# Helper to keep DB payload in sync with defined columns
+def sanitize_profile_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in data.items() if key in PROFILE_COLUMNS}
 
 # Add LinkedIn API initialization
 try:
@@ -200,6 +206,17 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         elif user_message == "➕ Add Profile":
             await add_profile(update, context)
         return
+
+    # Handle profile update flow
+    if context.user_data.get('awaiting_update'):
+        if is_valid_linkedin_url(user_message):
+            await process_profile_update(update, context, user_message)
+        else:
+            await update.message.reply_text(
+                "Please send a valid LinkedIn profile URL in the format:\n"
+                "https://www.linkedin.com/in/username"
+            )
+        return
     
     # Handle delete confirmation
     if context.user_data.get('awaiting_delete_confirmation'):
@@ -306,8 +323,9 @@ async def process_linkedin_url(update: Update, context: CallbackContext, url: st
             
             if profile_info:
                 insert_data.update(profile_info)
-                
-            conn.execute(linkedin_table.insert(), insert_data)
+
+            sanitized_data = sanitize_profile_data(insert_data)
+            conn.execute(linkedin_table.insert(), sanitized_data)
             logger.info(f"Saved LinkedIn URL for user {user_id}")
             
         await update.message.reply_text("Your LinkedIn profile URL has been saved!")
@@ -322,6 +340,56 @@ async def process_linkedin_url(update: Update, context: CallbackContext, url: st
     except Exception as e:
         logger.error(f"Error processing LinkedIn URL: {str(e)}", exc_info=True)
         await update.message.reply_text("Sorry, there was an error processing your LinkedIn URL.")
+
+async def process_profile_update(update: Update, context: CallbackContext, url: str) -> None:
+    """Update an existing LinkedIn profile for the user."""
+    user_id = update.message.from_user.id
+    
+    try:
+        with engine.connect() as conn:
+            existing_profile = conn.execute(
+                select(linkedin_table).where(linkedin_table.c.telegram_user_id == user_id)
+            ).first()
+        
+        if not existing_profile:
+            context.user_data.pop('awaiting_update', None)
+            await update.message.reply_text(
+                "You don't have a profile yet. Please share your LinkedIn URL first."
+            )
+            return
+        
+        profile_info = await fetch_linkedin_profile(url)
+        update_data = {
+            'linkedin_url': url,
+            'updated_at': datetime.utcnow()
+        }
+        
+        if profile_info:
+            update_data.update(profile_info)
+        
+        sanitized_data = sanitize_profile_data(update_data)
+        
+        with engine.begin() as conn:
+            conn.execute(
+                linkedin_table.update()
+                .where(linkedin_table.c.telegram_user_id == user_id)
+                .values(sanitized_data)
+            )
+        
+        context.user_data.pop('awaiting_update', None)
+        
+        await update.message.reply_text(
+            "✅ Your LinkedIn profile has been updated!",
+            reply_markup=await get_main_keyboard()
+        )
+        
+    except IntegrityError:
+        await update.message.reply_text(
+            "This LinkedIn profile URL is already registered by another user."
+        )
+    except Exception as e:
+        logger.error(f"Error updating LinkedIn profile for user {user_id}: {str(e)}", exc_info=True)
+        await update.message.reply_text("Sorry, there was an error updating your profile.")
 
 async def send_linkedin_profiles(update: Update, user_message: str) -> None:
     """Send other LinkedIn profiles to the user in a structured format"""
@@ -933,8 +1001,7 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
     
     try:
         if query.data.startswith("users_page_"):
-            page = int(query.data.split("_")[-1])
-            await show_user_list(update, context, page)
+            await show_user_list(update, context)
             
     except Exception as e:
         logger.error(f"Error in button callback: {str(e)}", exc_info=True)
@@ -979,8 +1046,17 @@ async def main():
             # Add handlers
             logger.info("Setting up command handlers...")
             application.add_handler(CommandHandler("start", start))
+            application.add_handler(CommandHandler("help", help_command))
+            application.add_handler(CommandHandler("status", status))
+            application.add_handler(CommandHandler("delete", delete_profile))
+            application.add_handler(CommandHandler("update", update_profile))
+            application.add_handler(CommandHandler("search", search_profiles))
+            application.add_handler(CommandHandler("stats", profile_stats))
+            application.add_handler(CommandHandler("export", export_profiles))
+            application.add_handler(CommandHandler("adminstats", admin_stats))
+            application.add_handler(CommandHandler("testlinkedin", test_linkedin))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-            application.add_handler(CommandHandler("help", start))  # Using the same handler as a placeholder
+            application.add_handler(CallbackQueryHandler(button_callback))
             application.add_error_handler(error_handler)
 
             logger.info("Bot is ready to set webhook")
