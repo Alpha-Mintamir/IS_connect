@@ -963,55 +963,35 @@ async def back_to_main_menu(update: Update, context: CallbackContext) -> None:
 
 async def main():
     logger.info("Starting bot...")
-    retry_delay = 5  # seconds
 
-    while True:  # Keep the bot running indefinitely
-        try:
-            # Create a new application instance
-            application = (
-                ApplicationBuilder()
-                .token(TELEGRAM_BOT_TOKEN)
-                .connect_timeout(CONNECT_TIMEOUT)
-                .read_timeout(READ_TIMEOUT)
-                .build()
-            )
+    # Create a new application instance
+    application = (
+        ApplicationBuilder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(READ_TIMEOUT)
+        .build()
+    )
 
-            # Add handlers
-            logger.info("Setting up command handlers...")
-            application.add_handler(CommandHandler("start", start))
-            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-            application.add_handler(CommandHandler("help", start))  # Using the same handler as a placeholder
-            application.add_error_handler(error_handler)
+    # Add handlers
+    logger.info("Setting up command handlers...")
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CommandHandler("help", start))  # Using the same handler as a placeholder
+    application.add_error_handler(error_handler)
 
-            logger.info("Bot is ready to set webhook")
+    logger.info("Bot is ready to set webhook")
 
-            # Set the webhook on Telegram's servers
-            await application.bot.set_webhook(WEBHOOK_URL)
+    # Start the webhook. This call is non‐blocking, and the bot will continue to run
+    # It also sets the webhook if webhook_url is provided
+    await application.start_webhook(
+        listen="0.0.0.0",
+        port=int(os.getenv("PORT", 8443)),
+        webhook_url=WEBHOOK_URL,
+    )
 
-            # Start the webhook. This call is non‐blocking, and the bot will continue to run
-            await application.start_webhook(
-                listen="0.0.0.0",
-                port=int(os.getenv("PORT", 8443)),
-                webhook_url=WEBHOOK_URL,
-            )
-
-            # Run the bot until you manually interrupt (e.g. with Ctrl+C)
-            await application.idle()
-
-        except telegram.error.NetworkError as e:
-            logger.error(f"Network error occurred: {e}")
-            await asyncio.sleep(retry_delay)  # Asynchronously wait before retrying
-            continue
-
-        except telegram.error.TimedOut:
-            logger.warning(f"Connection timed out. Retrying in {retry_delay} seconds...")
-            await asyncio.sleep(retry_delay)
-            continue
-
-        except Exception:
-            logger.exception("Failed to start bot:")
-            await asyncio.sleep(retry_delay)
-            continue
+    # Run the bot until you manually interrupt (e.g. with Ctrl+C)
+    await application.idle()
 
 if __name__ == "__main__":
     # Check environment variables before starting the bot
