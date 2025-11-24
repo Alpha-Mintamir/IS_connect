@@ -3,7 +3,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 import logging
 import os
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, insert, select, Table, MetaData, Column, Integer, String, DateTime, Text
+from sqlalchemy import create_engine, insert, select, Table, MetaData, Column, Integer, BigInteger, String, DateTime, Text, text
 from sqlalchemy.exc import IntegrityError
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -71,7 +71,7 @@ linkedin_table = Table(
     'user_linkedin', meta,
     Column('id', Integer, primary_key=True),
     Column('linkedin_url', String, unique=True, nullable=False),
-    Column('telegram_user_id', Integer, nullable=False),
+    Column('telegram_user_id', BigInteger, nullable=False),
     Column('full_name', String),
     Column('headline', String),
     Column('location', String),
@@ -284,44 +284,81 @@ async def process_linkedin_url(update: Update, context: CallbackContext, url: st
                 select(linkedin_table).where(linkedin_table.c.telegram_user_id == user_id)
             ).first()
             
-            if existing_profile:
+            is_update = context.user_data.get('awaiting_update', False)
+            
+            if existing_profile and not is_update:
                 logger.warning(f"Duplicate LinkedIn URL from user {user_id}")
                 await update.message.reply_text(
                     "You have already registered a LinkedIn profile.\n"
-                    "Use /delete to remove your current profile first, or\n"
-                    "Use /update to update your existing profile."
+                    "Use '❌ Delete Profile' to remove your current profile first, or\n"
+                    "Use '🔄 Update Profile' to update your existing profile."
                 )
                 return
 
-        # If no existing profile, proceed with profile creation
+        # Fetch profile information
         profile_info = await fetch_linkedin_profile(url)
         
-        # Insert the new profile
-        with engine.begin() as conn:
-            insert_data = {
-                'linkedin_url': url,
-                'telegram_user_id': user_id,
-                'created_at': datetime.utcnow()
-            }
-            
-            if profile_info:
-                insert_data.update(profile_info)
+        if is_update and existing_profile:
+            # Update existing profile
+            with engine.begin() as conn:
+                update_data = {
+                    'linkedin_url': url,
+                    'updated_at': datetime.utcnow()
+                }
                 
-            conn.execute(linkedin_table.insert(), insert_data)
-            logger.info(f"Saved LinkedIn URL for user {user_id}")
+                if profile_info:
+                    update_data.update(profile_info)
+                    
+                conn.execute(
+                    linkedin_table.update()
+                    .where(linkedin_table.c.telegram_user_id == user_id)
+                    .values(update_data)
+                )
+                logger.info(f"Updated LinkedIn profile for user {user_id}")
+                
+            await update.message.reply_text(
+                "✅ Your LinkedIn profile has been updated successfully!",
+                reply_markup=await get_main_keyboard()
+            )
+            context.user_data.pop('awaiting_update', None)
+        else:
+            # Insert new profile
+            with engine.begin() as conn:
+                insert_data = {
+                    'linkedin_url': url,
+                    'telegram_user_id': user_id,
+                    'created_at': datetime.utcnow()
+                }
+                
+                if profile_info:
+                    insert_data.update(profile_info)
+                    
+                conn.execute(linkedin_table.insert(), insert_data)
+                logger.info(f"Saved LinkedIn URL for user {user_id}")
+                
+            await update.message.reply_text(
+                "✅ Your LinkedIn profile URL has been saved!",
+                reply_markup=await get_main_keyboard()
+            )
             
-        await update.message.reply_text("Your LinkedIn profile URL has been saved!")
-        
-        # Show other profiles and notify users
-        await send_linkedin_profiles(update, url)
-        await notify_users_of_new_profile(context, url, user_id)
+            # Show other profiles and notify users only for new profiles
+            await send_linkedin_profiles(update, url)
+            await notify_users_of_new_profile(context, url, user_id)
         
     except IntegrityError:
         logger.warning(f"Duplicate LinkedIn URL from user {user_id}")
-        await update.message.reply_text("This LinkedIn profile has already been registered.")
+        await update.message.reply_text(
+            "This LinkedIn profile has already been registered by another user.",
+            reply_markup=await get_main_keyboard()
+        )
+        context.user_data.pop('awaiting_update', None)
     except Exception as e:
         logger.error(f"Error processing LinkedIn URL: {str(e)}", exc_info=True)
-        await update.message.reply_text("Sorry, there was an error processing your LinkedIn URL.")
+        await update.message.reply_text(
+            "Sorry, there was an error processing your LinkedIn URL.",
+            reply_markup=await get_main_keyboard()
+        )
+        context.user_data.pop('awaiting_update', None)
 
 async def send_linkedin_profiles(update: Update, user_message: str) -> None:
     """Send other LinkedIn profiles to the user in a structured format"""
@@ -979,23 +1016,47 @@ async def main():
             # Add handlers
             logger.info("Setting up command handlers...")
             application.add_handler(CommandHandler("start", start))
+            application.add_handler(CommandHandler("help", help_command))
+            application.add_handler(CommandHandler("search", search_profiles))
+            application.add_handler(CommandHandler("stats", profile_stats))
+            application.add_handler(CommandHandler("export", export_profiles))
+            application.add_handler(CommandHandler("test_linkedin", test_linkedin))
             application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-            application.add_handler(CommandHandler("help", start))  # Using the same handler as a placeholder
+            application.add_handler(CallbackQueryHandler(button_callback))
             application.add_error_handler(error_handler)
 
             logger.info("Bot is ready to set webhook")
 
-            # Set the webhook on Telegram's servers
-            await application.bot.set_webhook(WEBHOOK_URL)
+            try:
+                # Set the webhook on Telegram's servers
+                webhook_info = await application.bot.get_webhook_info()
+                logger.info(f"Current webhook: {webhook_info.url}")
+                
+                if webhook_info.url != WEBHOOK_URL:
+                    logger.info(f"Setting webhook to: {WEBHOOK_URL}")
+                    await application.bot.set_webhook(WEBHOOK_URL)
+                    logger.info("Webhook set successfully")
+                else:
+                    logger.info("Webhook already set correctly")
+                    
+            except Exception as webhook_error:
+                logger.error(f"Error setting webhook: {str(webhook_error)}", exc_info=True)
+                raise
 
             # Start the webhook. This call is non‐blocking, and the bot will continue to run
-            await application.start_webhook(
-                listen="0.0.0.0",
-                port=int(os.getenv("PORT", 8443)),
-                webhook_url=WEBHOOK_URL,
-            )
+            try:
+                await application.start_webhook(
+                    listen="0.0.0.0",
+                    port=int(os.getenv("PORT", 8443)),
+                    webhook_url=WEBHOOK_URL,
+                )
+                logger.info("Webhook started successfully")
+            except Exception as start_error:
+                logger.error(f"Error starting webhook: {str(start_error)}", exc_info=True)
+                raise
 
             # Run the bot until you manually interrupt (e.g. with Ctrl+C)
+            logger.info("Bot is now running and listening for updates")
             await application.idle()
 
         except telegram.error.NetworkError as e:
