@@ -96,7 +96,7 @@ linkedin_table = Table(
     'user_linkedin', meta,
     Column('id', Integer, primary_key=True),
     Column('linkedin_url', String, unique=True, nullable=False),
-    Column('telegram_user_id', Integer, nullable=False),
+    Column('telegram_user_id', BigInteger, nullable=False),
     Column('full_name', String),
     Column('headline', String),
     Column('location', String),
@@ -326,16 +326,18 @@ async def process_linkedin_url(update: Update, context: CallbackContext, url: st
                 select(linkedin_table).where(linkedin_table.c.telegram_user_id == user_id)
             ).first()
             
-            if existing_profile:
+            is_update = context.user_data.get('awaiting_update', False)
+            
+            if existing_profile and not is_update:
                 logger.warning(f"Duplicate LinkedIn URL from user {user_id}")
                 await update.message.reply_text(
                     "You have already registered a LinkedIn profile.\n"
-                    "Use /delete to remove your current profile first, or\n"
-                    "Use /update to update your existing profile."
+                    "Use '❌ Delete Profile' to remove your current profile first, or\n"
+                    "Use '🔄 Update Profile' to update your existing profile."
                 )
                 return
 
-        # If no existing profile, proceed with profile creation
+        # Fetch profile information
         profile_info = await fetch_linkedin_profile(url)
         
         # Insert the new profile
@@ -353,18 +355,24 @@ async def process_linkedin_url(update: Update, context: CallbackContext, url: st
             conn.execute(linkedin_table.insert(), sanitized_data)
             logger.info(f"Saved LinkedIn URL for user {user_id}")
             
-        await update.message.reply_text("Your LinkedIn profile URL has been saved!")
-        
-        # Show other profiles and notify users
-        await send_linkedin_profiles(update, url)
-        await notify_users_of_new_profile(context, url, user_id)
+            # Show other profiles and notify users only for new profiles
+            await send_linkedin_profiles(update, url)
+            await notify_users_of_new_profile(context, url, user_id)
         
     except IntegrityError:
         logger.warning(f"Duplicate LinkedIn URL from user {user_id}")
-        await update.message.reply_text("This LinkedIn profile has already been registered.")
+        await update.message.reply_text(
+            "This LinkedIn profile has already been registered by another user.",
+            reply_markup=await get_main_keyboard()
+        )
+        context.user_data.pop('awaiting_update', None)
     except Exception as e:
         logger.error(f"Error processing LinkedIn URL: {str(e)}", exc_info=True)
-        await update.message.reply_text("Sorry, there was an error processing your LinkedIn URL.")
+        await update.message.reply_text(
+            "Sorry, there was an error processing your LinkedIn URL.",
+            reply_markup=await get_main_keyboard()
+        )
+        context.user_data.pop('awaiting_update', None)
 
 async def process_profile_update(update: Update, context: CallbackContext, url: str) -> None:
     """Update an existing LinkedIn profile for the user."""
