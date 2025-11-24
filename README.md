@@ -66,6 +66,8 @@ A Telegram bot designed to facilitate professional networking within the Informa
 
    ```env
    TELEGRAM_BOT_TOKEN=your_bot_token
+   BOT_MODE=auto                 # auto | polling | webhook
+   WEBHOOK_URL=https://yourdomain.com/webhook  # only required in webhook mode
    DB_HOST=localhost
    DB_PORT=5432
    DB_NAME=your_db_name
@@ -74,6 +76,8 @@ A Telegram bot designed to facilitate professional networking within the Informa
    LINKEDIN_USERNAME=your_linkedin_email
    LINKEDIN_PASSWORD=your_linkedin_password
    ```
+
+`BOT_MODE` defaults to `auto`, which uses webhook delivery when `WEBHOOK_URL` is provided and falls back to long-polling otherwise. Set `BOT_MODE=polling` for local development without public HTTPS exposure, or `BOT_MODE=webhook` to force webhook usage (and make `WEBHOOK_URL` mandatory).
 
 4. **Initialize Database**
 
